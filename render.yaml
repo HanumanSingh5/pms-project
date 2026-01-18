@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: pms
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn pms:app
