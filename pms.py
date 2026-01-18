@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for, render_template_string
+from flask import Flask, request, redirect, url_for, render_template_string, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import re
@@ -26,6 +26,14 @@ class Project(db.Model):
     score = db.Column(db.Integer)
     status = db.Column(db.String(20), default="PENDING")  # PENDING / ACCEPTED / REJECTED
     student_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    frontend = db.Column(db.String(200))
+    backend = db.Column(db.String(200))
+    documentation = db.Column(db.Text)
+
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    description = db.Column(db.Text)
 
 # ---------------- UTILS ----------------
 def evaluate_title(title):
@@ -70,20 +78,37 @@ def register():
         return redirect(url_for('login'))
 
     return render_template_string("""
-    <h2>Register</h2>
-    <form method="post">
-      Name: <input name="name" required><br>
-      Email: <input name="email" required><br>
-      Password: <input type="password" name="password" required><br>
-      Role:
-      <select name="role">
-        <option>STUDENT</option>
-        <option>FACULTY</option>
-        <option>EXTERNAL</option>
-      </select><br><br>
-      <button>Register</button>
-    </form>
-    <a href="/login">Already registered? Login</a>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <title>Register</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body class="container mt-5">
+      <h2>Register</h2>
+      <form method="post" class="mb-3">
+        <div class="mb-2">
+          Name: <input name="name" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          Email: <input name="email" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          Password: <input type="password" name="password" class="form-control" required>
+        </div>
+        <div class="mb-2">
+          Role:
+          <select name="role" class="form-select">
+            <option>STUDENT</option>
+            <option>FACULTY</option>
+            <option>EXTERNAL</option>
+          </select>
+        </div>
+        <button class="btn btn-primary">Register</button>
+      </form>
+      <a href="/login">Already registered? Login</a>
+    </body>
+    </html>
     """)
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -95,15 +120,30 @@ def login():
         ).first()
         if user:
             login_user(user)
+            session['active_tab'] = None  # default tab for refresh
             return redirect('/dashboard')
         return "Invalid credentials"
     return render_template_string("""
-    <h2>Login</h2>
-    <form method="post">
-      Email: <input name="email"><br>
-      Password: <input type="password" name="password"><br>
-      <button>Login</button>
-    </form>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <title>Login</title>
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body class="container mt-5">
+      <h2>Login</h2>
+      <form method="post" class="mb-3">
+        <div class="mb-2">
+          Email: <input name="email" class="form-control">
+        </div>
+        <div class="mb-2">
+          Password: <input type="password" name="password" class="form-control">
+        </div>
+        <button class="btn btn-primary">Login</button>
+      </form>
+      <a href="/">Register</a>
+    </body>
+    </html>
     """)
 
 @app.route('/logout')
@@ -112,9 +152,14 @@ def logout():
     logout_user()
     return redirect('/login')
 
+# ---------------- DASHBOARD ----------------
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    tab = request.args.get('tab') or session.get('active_tab') or 'home'
+    session['active_tab'] = tab
+
+    # ---------------- ADMIN ----------------
     if current_user.role == 'ADMIN':
         students = User.query.filter_by(role='STUDENT').all()
         faculty = User.query.filter_by(role='FACULTY').all()
@@ -123,56 +168,158 @@ def dashboard():
         top_projects = Project.query.filter_by(status='ACCEPTED').order_by(Project.score.desc()).limit(10).all()
 
         return render_template_string("""
-        <h2>Admin Dashboard</h2>
-        <a href="/logout">Logout</a>
-        <hr>
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <title>Admin Dashboard</title>
+          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body class="container mt-3">
+          <h2>Admin Dashboard</h2>
+          <a href="/logout" class="btn btn-danger mb-3">Logout</a>
+          <ul class="nav nav-tabs">
+            <li class="nav-item">
+              <a class="nav-link {% if tab=='students' %}active{% endif %}" href="{{url_for('dashboard', tab='students')}}">Students</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if tab=='faculty' %}active{% endif %}" href="{{url_for('dashboard', tab='faculty')}}">Faculty</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if tab=='external' %}active{% endif %}" href="{{url_for('dashboard', tab='external')}}">External</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if tab=='projects' %}active{% endif %}" href="{{url_for('dashboard', tab='projects')}}">Pending Projects</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link {% if tab=='top' %}active{% endif %}" href="{{url_for('dashboard', tab='top')}}">Top Projects</a>
+            </li>
+          </ul>
+          <div class="mt-3">
+          {% if tab=='students' %}
+            <h4>Students</h4>
+            <table class="table table-bordered">
+            <tr><th>Name</th><th>Email</th><th>Actions</th></tr>
+            {% for s in students %}
+              <tr>
+                <td>{{s.name}}</td>
+                <td>{{s.email}}</td>
+                <td>
+                  <a href="/edit/{{s.id}}" class="btn btn-sm btn-warning">Edit</a>
+                  <a href="/delete/{{s.id}}" class="btn btn-sm btn-danger">Delete</a>
+                </td>
+              </tr>
+            {% endfor %}
+            </table>
+          {% elif tab=='faculty' %}
+            <h4>Faculty</h4>
+            <table class="table table-bordered">
+            <tr><th>Name</th><th>Email</th><th>Actions</th></tr>
+            {% for f in faculty %}
+              <tr>
+                <td>{{f.name}}</td>
+                <td>{{f.email}}</td>
+                <td>
+                  <a href="/edit/{{f.id}}" class="btn btn-sm btn-warning">Edit</a>
+                  <a href="/delete/{{f.id}}" class="btn btn-sm btn-danger">Delete</a>
+                </td>
+              </tr>
+            {% endfor %}
+            </table>
+          {% elif tab=='external' %}
+            <h4>External Faculty</h4>
+            <table class="table table-bordered">
+            <tr><th>Name</th><th>Email</th><th>Actions</th></tr>
+            {% for e in external %}
+              <tr>
+                <td>{{e.name}}</td>
+                <td>{{e.email}}</td>
+                <td>
+                  <a href="/edit/{{e.id}}" class="btn btn-sm btn-warning">Edit</a>
+                  <a href="/delete/{{e.id}}" class="btn btn-sm btn-danger">Delete</a>
+                </td>
+              </tr>
+            {% endfor %}
+            </table>
+          {% elif tab=='projects' %}
+            <h4>Pending Projects</h4>
+            <table class="table table-bordered">
+            <tr><th>Title</th><th>Student</th><th>Actions</th></tr>
+            {% for p in projects %}
+              <tr>
+                <td>{{p.title}}</td>
+                <td>{{p.student_id}}</td>
+                <td>
+                  <a href="/approve/{{p.id}}/ACCEPT" class="btn btn-sm btn-success">Accept</a>
+                  <a href="/approve/{{p.id}}/REJECT" class="btn btn-sm btn-danger">Reject</a>
+                </td>
+              </tr>
+            {% endfor %}
+            </table>
+          {% elif tab=='top' %}
+            <h4>Top Projects</h4>
+            {% for t in top_projects %}
+              <p>{{t.title}} (Score: {{t.score}})</p>
+            {% endfor %}
+          {% endif %}
+          </div>
+        </body>
+        </html>
+        """, students=students, faculty=faculty, external=external,
+           projects=projects, top_projects=top_projects, tab=tab)
 
-        <h3>Students</h3>
-        {% for s in students %}
-            {{s.name}} ({{s.email}})
-            <a href="/edit/{{s.id}}">Edit</a>
-            <a href="/delete/{{s.id}}">Delete</a><br>
-        {% endfor %}
-
-        <h3>Faculties</h3>
-        {% for f in faculty %}
-            {{f.name}} ({{f.email}})
-            <a href="/edit/{{f.id}}">Edit</a>
-            <a href="/delete/{{f.id}}">Delete</a><br>
-        {% endfor %}
-
-        <h3>External Faculties</h3>
-        {% for e in external %}
-            {{e.name}} ({{e.email}})
-            <a href="/edit/{{e.id}}">Edit</a>
-            <a href="/delete/{{e.id}}">Delete</a><br>
-        {% endfor %}
-
-        <h3>Project Titles Pending Approval</h3>
-        {% for p in projects %}
-            {{p.title}} by {{p.student_id}}
-            <a href="/approve/{{p.id}}/accept">Accept</a>
-            <a href="/approve/{{p.id}}/reject">Reject</a><br>
-        {% endfor %}
-
-        <h3>Top Projects</h3>
-        {% for t in top_projects %}
-            {{t.title}} (Score: {{t.score}})<br>
-        {% endfor %}
-        """ , students=students, faculty=faculty, external=external, projects=projects, top_projects=top_projects)
-
+    # ---------------- STUDENT ----------------
     if current_user.role == 'STUDENT':
+        projects = Project.query.filter_by(student_id=current_user.id).all()
+        tasks = Task.query.join(Project).filter(Project.student_id==current_user.id).all()
         return render_template_string("""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <title>Student Dashboard</title>
+          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body class="container mt-3">
         <h2>Student Dashboard</h2>
-        <a href="/logout">Logout</a><br><br>
-        <form method="post" action="/project">
-          Project Title: <input name="title" required>
-          <button>Submit</button>
-        </form>
-        """)
+        <a href="/logout" class="btn btn-danger mb-3">Logout</a>
+        <ul class="nav nav-tabs mb-3">
+          <li class="nav-item"><a class="nav-link {% if tab=='submit' %}active{% endif %}" href="{{url_for('dashboard', tab='submit')}}">Submit Project Title</a></li>
+          <li class="nav-item"><a class="nav-link {% if tab=='details' %}active{% endif %}" href="{{url_for('dashboard', tab='details')}}">Enter Project Details</a></li>
+          <li class="nav-item"><a class="nav-link {% if tab=='tasks' %}active{% endif %}" href="{{url_for('dashboard', tab='tasks')}}">Assigned Tasks</a></li>
+        </ul>
 
+        {% if tab=='submit' %}
+        <form method="post" action="/project">
+          <div class="mb-2">
+            Project Title: <input name="title" class="form-control" required>
+          </div>
+          <button class="btn btn-primary">Submit</button>
+        </form>
+        {% elif tab=='details' %}
+        {% for p in projects %}
+          {% if p.status=='ACCEPTED' %}
+            <form method="post" action="/project/details/{{p.id}}" class="mb-3">
+              <h5>{{p.title}}</h5>
+              Frontend: <input name="frontend" value="{{p.frontend or ''}}" class="form-control mb-1"><br>
+              Backend: <input name="backend" value="{{p.backend or ''}}" class="form-control mb-1"><br>
+              Documentation: <textarea name="documentation" class="form-control mb-1">{{p.documentation or ''}}</textarea><br>
+              <button class="btn btn-success">Save Details</button>
+            </form>
+          {% endif %}
+        {% endfor %}
+        {% elif tab=='tasks' %}
+        <h5>Assigned Tasks</h5>
+        {% for t in tasks %}
+          <p>{{t.description}}</p>
+        {% endfor %}
+        {% endif %}
+        </body>
+        </html>
+        """, projects=projects, tasks=tasks, tab=tab)
+
+    # ---------------- FACULTY / EXTERNAL ----------------
     return f"<h2>{current_user.role} Dashboard</h2><a href='/logout'>Logout</a>"
 
+# ---------------- PROJECT ROUTES ----------------
 @app.route('/project', methods=['POST'])
 @login_required
 def project():
@@ -188,6 +335,18 @@ def project():
     db.session.commit()
     return "✅ Title submitted. Waiting for admin approval."
 
+@app.route('/project/details/<int:id>', methods=['POST'])
+@login_required
+def project_details(id):
+    p = Project.query.get(id)
+    if p.student_id != current_user.id:
+        return "Unauthorized"
+    p.frontend = request.form['frontend']
+    p.backend = request.form['backend']
+    p.documentation = request.form['documentation']
+    db.session.commit()
+    return redirect(url_for('dashboard', tab='details'))
+
 @app.route('/approve/<int:id>/<action>')
 @login_required
 def approve(id, action):
@@ -199,7 +358,7 @@ def approve(id, action):
     else:
         project.status = 'REJECTED'
     db.session.commit()
-    return redirect('/dashboard')
+    return redirect(url_for('dashboard', tab='projects'))
 
 @app.route('/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -212,7 +371,7 @@ def edit_user(id):
         user.email = request.form['email']
         user.password = request.form['password']
         db.session.commit()
-        return redirect('/dashboard')
+        return redirect(url_for('dashboard', tab='students'))
     return render_template_string("""
     <h2>Edit User</h2>
     <form method="post">
@@ -231,7 +390,7 @@ def delete_user(id):
     user = User.query.get(id)
     db.session.delete(user)
     db.session.commit()
-    return redirect('/dashboard')
+    return redirect(url_for('dashboard', tab='students'))
 
 # ---------------- INIT ----------------
 with app.app_context():
@@ -248,8 +407,3 @@ with app.app_context():
 
 if __name__ == '__main__':
     app.run()
-
-
-
-
-
