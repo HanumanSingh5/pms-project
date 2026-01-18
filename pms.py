@@ -131,11 +131,20 @@ def approve(id):
     return redirect('/dashboard')
 
 # ---------------- MAIN ----------------
-if __name__ == '__main__':
+with app.app_context():
     db.create_all()
-    # create admin if not exists
     if not User.query.filter_by(role='ADMIN').first():
-        admin = User(name="ADMIN", email="admin@pms.com", password="admin", role="ADMIN", approved=True)
+        admin = User(
+            name="ADMIN",
+            email="admin@pms.com",
+            password="admin",
+            role="ADMIN",
+            approved=True
+        )
         db.session.add(admin)
         db.session.commit()
-    app.run(debug=True)
+
+if __name__ == '__main__':
+    app.run()
+
+
