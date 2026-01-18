@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<title>Faculty Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body class="container mt-4">
+
+<h2>Faculty Dashboard</h2>
+<a href="/logout" class="btn btn-danger float-end">Logout</a>
+
+<hr>
+
+<h4>Approved Student Projects</h4>
+<table class="table table-bordered">
+<tr>
+<th>Student</th>
+<th>Project Title</th>
+<th>Task</th>
+</tr>
+
+{% for p in projects %}
+<tr>
+<td>{{p.student_name}}</td>
+<td>{{p.title}}</td>
+<td>
+<form method="post" action="/assign_task/{{p.id}}">
+<input name="task" class="form-control mb-1" placeholder="Enter Task">
+<button class="btn btn-primary btn-sm">Assign</button>
+</form>
+</td>
+</tr>
+{% endfor %}
+</table>
+
+</body>
+</html>
